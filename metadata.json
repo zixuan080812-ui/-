@@ -1,0 +1,6 @@
+{
+  "name": "Chat Companion",
+  "description": "A elegant and polished chat room application allowing local double-sided chat and smart AI companion conversations powered by Gemini.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
