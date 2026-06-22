@@ -403,6 +403,34 @@ fun ClassicDuetChat(
     var showEmojiPicker by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
 
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var isVoiceMode by remember { mutableStateOf(false) }
+    var isRecording by remember { mutableStateOf(false) }
+    var recordStartTime by remember { mutableStateOf(0L) }
+
+    val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            isVoiceMode = true
+        } else {
+            android.widget.Toast.makeText(context, "需要麦克风录音权限哦", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val tryToggleVoiceMode = {
+        val hasPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+            context,
+            android.Manifest.permission.RECORD_AUDIO
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+        if (hasPermission) {
+            isVoiceMode = !isVoiceMode
+        } else {
+            permissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.size - 1)
@@ -558,82 +586,119 @@ fun ClassicDuetChat(
                 }
 
                 // Core send bar
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    TextField(
-                        value = textInput,
-                        onValueChange = {
-                            textInput = it
-                            onInteract()
-                        },
-                        modifier = Modifier
-                            .weight(1f)
-                            .border(width = 1.dp, color = Color(0x33FFFFFF), shape = RoundedCornerShape(24.dp))
-                            .testTag("duet_input_field"),
-                        placeholder = {
-                            Text(
-                                text = "用 ${if (currentUserLocal == "user1") user1Name else user2Name} 的身份发送...",
-                                fontSize = 14.sp
-                            )
-                        },
-                        trailingIcon = {
-                            IconButton(
-                                onClick = { showEmojiPicker = !showEmojiPicker },
-                                modifier = Modifier.testTag("duet_emoji_toggle")
-                            ) {
-                                Text(text = if (showEmojiPicker) "⌨️" else "😀", fontSize = 18.sp)
+                if (isVoiceMode) {
+                    VoiceRecorderPanel(
+                        isRecording = isRecording,
+                        onStartRecording = {
+                            val f = AudioHelper.startRecording(context)
+                            if (f != null) {
+                                isRecording = true
+                                recordStartTime = System.currentTimeMillis()
                             }
                         },
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                            focusedIndicatorColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent
-                        ),
-                        shape = RoundedCornerShape(24.dp),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                        keyboardActions = KeyboardActions(onSend = {
-                            if (textInput.isNotBlank()) {
-                                onSendMessage(textInput)
-                                textInput = ""
-                                focusManager.clearFocus()
+                        onCancelRecording = {
+                            AudioHelper.stopRecording()
+                            isRecording = false
+                        },
+                        onStopAndSend = {
+                            val f = AudioHelper.stopRecording()
+                            isRecording = false
+                            val duration = (System.currentTimeMillis() - recordStartTime) / 1000
+                            if (f != null && f.exists() && duration > 0) {
+                                onSendMessage("audio:${f.name}|$duration")
                             }
-                        }),
-                        maxLines = 4
+                            isVoiceMode = false
+                        },
+                        onKeyboardMode = {
+                            isVoiceMode = false
+                        }
                     )
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    IconButton(
-                        onClick = {
-                            if (textInput.isNotBlank()) {
-                                onSendMessage(textInput)
-                                textInput = ""
-                                focusManager.clearFocus()
-                            }
-                        },
-                        enabled = textInput.isNotBlank(),
-                        modifier = Modifier
-                            .size(48.dp)
-                            .clip(CircleShape)
-                            .background(
-                                if (textInput.isNotBlank()) {
-                                    if (currentUserLocal == "user1") MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.secondary
-                                } else {
-                                    MaterialTheme.colorScheme.surfaceVariant
-                                }
-                            )
-                            .testTag("duet_send_button")
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Send,
-                            contentDescription = "发送",
-                            tint = if (textInput.isNotBlank()) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp)
+                        TextField(
+                            value = textInput,
+                            onValueChange = {
+                                textInput = it
+                                onInteract()
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .border(width = 1.dp, color = Color(0x33FFFFFF), shape = RoundedCornerShape(24.dp))
+                                .testTag("duet_input_field"),
+                            placeholder = {
+                                Text(
+                                    text = "用 ${if (currentUserLocal == "user1") user1Name else user2Name} 的身份发送...",
+                                    fontSize = 14.sp
+                                )
+                            },
+                            leadingIcon = {
+                                IconButton(
+                                    onClick = { tryToggleVoiceMode() },
+                                    modifier = Modifier.testTag("duet_voice_toggle")
+                                ) {
+                                    Text(text = "🎙️", fontSize = 18.sp)
+                                }
+                            },
+                            trailingIcon = {
+                                IconButton(
+                                    onClick = { showEmojiPicker = !showEmojiPicker },
+                                    modifier = Modifier.testTag("duet_emoji_toggle")
+                                ) {
+                                    Text(text = if (showEmojiPicker) "⌨️" else "😀", fontSize = 18.sp)
+                                }
+                            },
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent
+                            ),
+                            shape = RoundedCornerShape(24.dp),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                            keyboardActions = KeyboardActions(onSend = {
+                                if (textInput.isNotBlank()) {
+                                    onSendMessage(textInput)
+                                    textInput = ""
+                                    focusManager.clearFocus()
+                                }
+                            }),
+                            maxLines = 4
                         )
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        IconButton(
+                            onClick = {
+                                if (textInput.isNotBlank()) {
+                                    onSendMessage(textInput)
+                                    textInput = ""
+                                    focusManager.clearFocus()
+                                }
+                            },
+                            enabled = textInput.isNotBlank(),
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (textInput.isNotBlank()) {
+                                        if (currentUserLocal == "user1") MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.secondary
+                                    } else {
+                                        MaterialTheme.colorScheme.surfaceVariant
+                                    }
+                                )
+                                .testTag("duet_send_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Send,
+                                contentDescription = "发送",
+                                tint = if (textInput.isNotBlank()) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     }
                 }
 
@@ -1037,6 +1102,34 @@ fun AiCompanionChat(
     var showEmojiPicker by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
 
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var isVoiceMode by remember { mutableStateOf(false) }
+    var isRecording by remember { mutableStateOf(false) }
+    var recordStartTime by remember { mutableStateOf(0L) }
+
+    val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            isVoiceMode = true
+        } else {
+            android.widget.Toast.makeText(context, "需要麦克风录音权限哦", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val tryToggleVoiceMode = {
+        val hasPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+            context,
+            android.Manifest.permission.RECORD_AUDIO
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+        if (hasPermission) {
+            isVoiceMode = !isVoiceMode
+        } else {
+            permissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
     val currentPersona = personas.find { it.id == activePersonaId } ?: personas.first()
 
     LaunchedEffect(messages.size) {
@@ -1204,80 +1297,117 @@ fun AiCompanionChat(
                     .padding(16.dp)
                     .navigationBarsPadding()
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    TextField(
-                        value = textInput,
-                        onValueChange = {
-                            textInput = it
-                            onInteract()
-                        },
-                        modifier = Modifier
-                            .weight(1f)
-                            .border(width = 1.dp, color = Color(0x33FFFFFF), shape = RoundedCornerShape(24.dp))
-                            .testTag("ai_input_field"),
-                        placeholder = {
-                            Text(
-                                text = "给 ${currentPersona.name} 发送消息...",
-                                fontSize = 14.sp
-                            )
-                        },
-                        trailingIcon = {
-                            IconButton(
-                                onClick = { showEmojiPicker = !showEmojiPicker },
-                                modifier = Modifier.testTag("ai_emoji_toggle"),
-                                enabled = !isGenerating
-                            ) {
-                                Text(text = if (showEmojiPicker) "⌨️" else "😀", fontSize = 18.sp)
+                if (isVoiceMode) {
+                    VoiceRecorderPanel(
+                        isRecording = isRecording,
+                        onStartRecording = {
+                            val f = AudioHelper.startRecording(context)
+                            if (f != null) {
+                                isRecording = true
+                                recordStartTime = System.currentTimeMillis()
                             }
                         },
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                            focusedIndicatorColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent
-                        ),
-                        shape = RoundedCornerShape(24.dp),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                        keyboardActions = KeyboardActions(onSend = {
-                            if (textInput.isNotBlank() && !isGenerating) {
-                                onSendMessage(textInput)
-                                textInput = ""
-                                focusManager.clearFocus()
+                        onCancelRecording = {
+                            AudioHelper.stopRecording()
+                            isRecording = false
+                        },
+                        onStopAndSend = {
+                            val f = AudioHelper.stopRecording()
+                            isRecording = false
+                            val duration = (System.currentTimeMillis() - recordStartTime) / 1000
+                            if (f != null && f.exists() && duration > 0) {
+                                onSendMessage("audio:${f.name}|$duration")
                             }
-                        }),
-                        maxLines = 4,
-                        enabled = !isGenerating
+                            isVoiceMode = false
+                        },
+                        onKeyboardMode = {
+                            isVoiceMode = false
+                        }
                     )
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    IconButton(
-                        onClick = {
-                            if (textInput.isNotBlank() && !isGenerating) {
-                                onSendMessage(textInput)
-                                textInput = ""
-                                focusManager.clearFocus()
-                            }
-                        },
-                        enabled = textInput.isNotBlank() && !isGenerating,
-                        modifier = Modifier
-                            .size(48.dp)
-                            .clip(CircleShape)
-                            .background(
-                                if (textInput.isNotBlank() && !isGenerating) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.surfaceVariant
-                            )
-                            .testTag("ai_send_button")
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Send,
-                            contentDescription = "发送",
-                            tint = if (textInput.isNotBlank() && !isGenerating) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp)
+                        TextField(
+                            value = textInput,
+                            onValueChange = {
+                                textInput = it
+                                onInteract()
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .border(width = 1.dp, color = Color(0x33FFFFFF), shape = RoundedCornerShape(24.dp))
+                                .testTag("ai_input_field"),
+                            placeholder = {
+                                Text(
+                                    text = "给 ${currentPersona.name} 发送消息...",
+                                    fontSize = 14.sp
+                                )
+                            },
+                            leadingIcon = {
+                                IconButton(
+                                    onClick = { tryToggleVoiceMode() },
+                                    modifier = Modifier.testTag("ai_voice_toggle")
+                                ) {
+                                    Text(text = "🎙️", fontSize = 18.sp)
+                                }
+                            },
+                            trailingIcon = {
+                                IconButton(
+                                    onClick = { showEmojiPicker = !showEmojiPicker },
+                                    modifier = Modifier.testTag("ai_emoji_toggle"),
+                                    enabled = !isGenerating
+                                ) {
+                                    Text(text = if (showEmojiPicker) "⌨️" else "😀", fontSize = 18.sp)
+                                }
+                            },
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent
+                            ),
+                            shape = RoundedCornerShape(24.dp),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                            keyboardActions = KeyboardActions(onSend = {
+                                if (textInput.isNotBlank() && !isGenerating) {
+                                    onSendMessage(textInput)
+                                    textInput = ""
+                                    focusManager.clearFocus()
+                                }
+                            }),
+                            maxLines = 4,
+                            enabled = !isGenerating
                         )
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        IconButton(
+                            onClick = {
+                                if (textInput.isNotBlank() && !isGenerating) {
+                                    onSendMessage(textInput)
+                                    textInput = ""
+                                    focusManager.clearFocus()
+                                }
+                            },
+                            enabled = textInput.isNotBlank() && !isGenerating,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (textInput.isNotBlank() && !isGenerating) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.surfaceVariant
+                                )
+                                .testTag("ai_send_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Send,
+                                contentDescription = "发送",
+                                tint = if (textInput.isNotBlank() && !isGenerating) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     }
                 }
 
@@ -1406,13 +1536,44 @@ fun MessageBubbleRow(
                         .padding(horizontal = 14.dp, vertical = 10.dp)
                 ) {
                     Column {
-                        Text(
-                            text = message.content,
-                            color = bubbleTextColor,
-                            fontSize = 14.sp,
-                            lineHeight = 20.sp,
-                            fontFamily = FontFamily.SansSerif
-                        )
+                        if (message.content.startsWith("audio:")) {
+                            val context = androidx.compose.ui.platform.LocalContext.current
+                            var isPlaying by remember { mutableStateOf(AudioHelper.isPlaying(message.content)) }
+                            
+                            DisposableEffect(message.content) {
+                                onDispose {
+                                    if (AudioHelper.isPlaying(message.content)) {
+                                        AudioHelper.stopPlaying()
+                                    }
+                                }
+                            }
+                            
+                            AudioPlayBubble(
+                                audioContent = message.content,
+                                isSelf = isSelf,
+                                isPlaying = isPlaying,
+                                onTogglePlay = {
+                                    if (isPlaying) {
+                                        AudioHelper.stopPlaying()
+                                        isPlaying = false
+                                    } else {
+                                        AudioHelper.playAudio(context, message.content.substringAfter("audio:").split("|").first()) {
+                                            isPlaying = false
+                                        }
+                                        isPlaying = true
+                                    }
+                                },
+                                bubbleTextColor = bubbleTextColor
+                            )
+                        } else {
+                            Text(
+                                text = message.content,
+                                color = bubbleTextColor,
+                                fontSize = 14.sp,
+                                lineHeight = 20.sp,
+                                fontFamily = FontFamily.SansSerif
+                            )
+                        }
                         Spacer(modifier = Modifier.height(4.dp))
                         Row(
                             horizontalArrangement = Arrangement.End,
@@ -1717,6 +1878,34 @@ fun CloudSyncChat(
     var textInput by remember { mutableStateOf("") }
     var showEmojiPicker by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
+
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var isVoiceMode by remember { mutableStateOf(false) }
+    var isRecording by remember { mutableStateOf(false) }
+    var recordStartTime by remember { mutableStateOf(0L) }
+
+    val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            isVoiceMode = true
+        } else {
+            android.widget.Toast.makeText(context, "需要麦克风录音权限哦", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val tryToggleVoiceMode = {
+        val hasPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+            context,
+            android.Manifest.permission.RECORD_AUDIO
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+        if (hasPermission) {
+            isVoiceMode = !isVoiceMode
+        } else {
+            permissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+        }
+    }
 
     // For joining rooms
     var roomCodeInput by remember { mutableStateOf("") }
@@ -2030,76 +2219,113 @@ fun CloudSyncChat(
                         .padding(16.dp)
                         .navigationBarsPadding()
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        TextField(
-                            value = textInput,
-                            onValueChange = { textInput = it },
-                            modifier = Modifier
-                                .weight(1f)
-                                .border(width = 1.dp, color = Color(0x33FFFFFF), shape = RoundedCornerShape(24.dp))
-                                .testTag("cloud_input_field"),
-                            placeholder = {
-                                Text(
-                                    text = "说些什么（支持不同设备实时同步）...",
-                                    fontSize = 13.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                                )
-                            },
-                            trailingIcon = {
-                                IconButton(
-                                    onClick = { showEmojiPicker = !showEmojiPicker },
-                                    modifier = Modifier.testTag("cloud_emoji_toggle")
-                                ) {
-                                    Text(text = if (showEmojiPicker) "⌨️" else "😀", fontSize = 18.sp)
+                    if (isVoiceMode) {
+                        VoiceRecorderPanel(
+                            isRecording = isRecording,
+                            onStartRecording = {
+                                val f = AudioHelper.startRecording(context)
+                                if (f != null) {
+                                    isRecording = true
+                                    recordStartTime = System.currentTimeMillis()
                                 }
                             },
-                            colors = TextFieldDefaults.colors(
-                                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                                focusedIndicatorColor = Color.Transparent,
-                                unfocusedIndicatorColor = Color.Transparent
-                            ),
-                            shape = RoundedCornerShape(24.dp),
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                            keyboardActions = KeyboardActions(onSend = {
-                                if (textInput.isNotBlank()) {
-                                    onSendMessage(textInput)
-                                    textInput = ""
-                                    focusManager.clearFocus()
+                            onCancelRecording = {
+                                AudioHelper.stopRecording()
+                                isRecording = false
+                            },
+                            onStopAndSend = {
+                                val f = AudioHelper.stopRecording()
+                                isRecording = false
+                                val duration = (System.currentTimeMillis() - recordStartTime) / 1000
+                                if (f != null && f.exists() && duration > 0) {
+                                    onSendMessage("audio:${f.name}|$duration")
                                 }
-                            }),
-                            maxLines = 4
+                                isVoiceMode = false
+                            },
+                            onKeyboardMode = {
+                                isVoiceMode = false
+                            }
                         )
-
-                        Spacer(modifier = Modifier.width(8.dp))
-
-                        IconButton(
-                            onClick = {
-                                if (textInput.isNotBlank()) {
-                                    onSendMessage(textInput)
-                                    textInput = ""
-                                    focusManager.clearFocus()
-                                }
-                            },
-                            enabled = textInput.isNotBlank(),
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    if (textInput.isNotBlank()) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.surfaceVariant
-                                )
-                                .testTag("cloud_send_button")
+                    } else {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Send,
-                                contentDescription = "发送",
-                                tint = if (textInput.isNotBlank()) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(20.dp)
+                            TextField(
+                                value = textInput,
+                                onValueChange = { textInput = it },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .border(width = 1.dp, color = Color(0x33FFFFFF), shape = RoundedCornerShape(24.dp))
+                                    .testTag("cloud_input_field"),
+                                placeholder = {
+                                    Text(
+                                        text = "说些什么（支持不同设备实时同步）...",
+                                        fontSize = 13.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                    )
+                                },
+                                leadingIcon = {
+                                    IconButton(
+                                        onClick = { tryToggleVoiceMode() },
+                                        modifier = Modifier.testTag("cloud_voice_toggle")
+                                    ) {
+                                        Text(text = "🎙️", fontSize = 18.sp)
+                                    }
+                                },
+                                trailingIcon = {
+                                    IconButton(
+                                        onClick = { showEmojiPicker = !showEmojiPicker },
+                                        modifier = Modifier.testTag("cloud_emoji_toggle")
+                                    ) {
+                                        Text(text = if (showEmojiPicker) "⌨️" else "😀", fontSize = 18.sp)
+                                    }
+                                },
+                                colors = TextFieldDefaults.colors(
+                                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                    focusedIndicatorColor = Color.Transparent,
+                                    unfocusedIndicatorColor = Color.Transparent
+                                ),
+                                shape = RoundedCornerShape(24.dp),
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                                keyboardActions = KeyboardActions(onSend = {
+                                    if (textInput.isNotBlank()) {
+                                        onSendMessage(textInput)
+                                        textInput = ""
+                                        focusManager.clearFocus()
+                                    }
+                                }),
+                                maxLines = 4
                             )
+
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            IconButton(
+                                onClick = {
+                                    if (textInput.isNotBlank()) {
+                                        onSendMessage(textInput)
+                                        textInput = ""
+                                        focusManager.clearFocus()
+                                    }
+                                },
+                                enabled = textInput.isNotBlank(),
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (textInput.isNotBlank()) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.surfaceVariant
+                                    )
+                                    .testTag("cloud_send_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Send,
+                                    contentDescription = "发送",
+                                    tint = if (textInput.isNotBlank()) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
                         }
                     }
 
@@ -2220,13 +2446,44 @@ fun MessageBubbleRowWithReadCheck(
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
                 ) {
                     Column {
-                        Text(
-                            text = message.content,
-                            color = bubbleTextColor,
-                            fontSize = 14.sp,
-                            lineHeight = 20.sp,
-                            fontFamily = FontFamily.SansSerif
-                        )
+                        if (message.content.startsWith("audio:")) {
+                            val context = androidx.compose.ui.platform.LocalContext.current
+                            var isPlaying by remember { mutableStateOf(AudioHelper.isPlaying(message.content)) }
+                            
+                            DisposableEffect(message.content) {
+                                onDispose {
+                                    if (AudioHelper.isPlaying(message.content)) {
+                                        AudioHelper.stopPlaying()
+                                    }
+                                }
+                            }
+                            
+                            AudioPlayBubble(
+                                audioContent = message.content,
+                                isSelf = isSelf,
+                                isPlaying = isPlaying,
+                                onTogglePlay = {
+                                    if (isPlaying) {
+                                        AudioHelper.stopPlaying()
+                                        isPlaying = false
+                                    } else {
+                                        AudioHelper.playAudio(context, message.content.substringAfter("audio:").split("|").first()) {
+                                            isPlaying = false
+                                        }
+                                        isPlaying = true
+                                    }
+                                },
+                                bubbleTextColor = bubbleTextColor
+                            )
+                        } else {
+                            Text(
+                                text = message.content,
+                                color = bubbleTextColor,
+                                fontSize = 14.sp,
+                                lineHeight = 20.sp,
+                                fontFamily = FontFamily.SansSerif
+                            )
+                        }
                         Spacer(modifier = Modifier.height(4.dp))
                         Row(
                             horizontalArrangement = Arrangement.End,
