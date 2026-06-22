@@ -23,6 +23,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.ui.unit.Dp
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -392,6 +397,7 @@ fun ClassicDuetChat(
 ) {
     val listState = rememberLazyListState()
     var textInput by remember { mutableStateOf("") }
+    var showEmojiPicker by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
 
     LaunchedEffect(messages.size) {
@@ -569,6 +575,14 @@ fun ClassicDuetChat(
                                 fontSize = 14.sp
                             )
                         },
+                        trailingIcon = {
+                            IconButton(
+                                onClick = { showEmojiPicker = !showEmojiPicker },
+                                modifier = Modifier.testTag("duet_emoji_toggle")
+                            ) {
+                                Text(text = if (showEmojiPicker) "⌨️" else "😀", fontSize = 18.sp)
+                            }
+                        },
                         colors = TextFieldDefaults.colors(
                             focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                             unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
@@ -618,6 +632,16 @@ fun ClassicDuetChat(
                             modifier = Modifier.size(20.dp)
                         )
                     }
+                }
+
+                if (showEmojiPicker) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    EmojiPickerPanel(
+                        onEmojiSelected = { emoji ->
+                            textInput = textInput + emoji
+                            onInteract()
+                        }
+                    )
                 }
             }
         }
@@ -738,6 +762,7 @@ fun FaceToFacePane(
 ) {
     val listState = rememberLazyListState()
     var text by remember { mutableStateOf("") }
+    var showEmojiPicker by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
 
     LaunchedEffect(messages.size) {
@@ -921,6 +946,16 @@ fun FaceToFacePane(
                     .heightIn(max = 50.dp)
                     .testTag("f2f_input_$myPaneId"),
                 placeholder = { Text("在此输入消息...", fontSize = 12.sp) },
+                trailingIcon = {
+                    IconButton(
+                        onClick = { showEmojiPicker = !showEmojiPicker },
+                        modifier = Modifier
+                            .size(24.dp)
+                            .testTag("f2f_emoji_toggle_$myPaneId")
+                    ) {
+                        Text(text = if (showEmojiPicker) "⌨️" else "😀", fontSize = 15.sp)
+                    }
+                },
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f),
                     unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
@@ -964,6 +999,17 @@ fun FaceToFacePane(
                 )
             }
         }
+
+        if (showEmojiPicker) {
+            Spacer(modifier = Modifier.height(4.dp))
+            EmojiPickerPanel(
+                height = 105.dp,
+                onEmojiSelected = { emoji ->
+                    text = text + emoji
+                    onInteract()
+                }
+            )
+        }
     }
 }
 
@@ -983,6 +1029,7 @@ fun AiCompanionChat(
 ) {
     val listState = rememberLazyListState()
     var textInput by remember { mutableStateOf("") }
+    var showEmojiPicker by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
 
     val currentPersona = personas.find { it.id == activePersonaId } ?: personas.first()
@@ -1146,73 +1193,96 @@ fun AiCompanionChat(
             shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
             color = MaterialTheme.colorScheme.surface
         ) {
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp)
-                    .navigationBarsPadding(),
-                verticalAlignment = Alignment.CenterVertically
+                    .navigationBarsPadding()
             ) {
-                TextField(
-                    value = textInput,
-                    onValueChange = {
-                        textInput = it
-                        onInteract()
-                    },
-                    modifier = Modifier
-                        .weight(1f)
-                        .border(width = 1.dp, color = Color(0x33FFFFFF), shape = RoundedCornerShape(24.dp))
-                        .testTag("ai_input_field"),
-                    placeholder = {
-                        Text(
-                            text = "给 ${currentPersona.name} 发送消息...",
-                            fontSize = 14.sp
-                        )
-                    },
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                        focusedIndicatorColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent
-                    ),
-                    shape = RoundedCornerShape(24.dp),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                    keyboardActions = KeyboardActions(onSend = {
-                        if (textInput.isNotBlank() && !isGenerating) {
-                            onSendMessage(textInput)
-                            textInput = ""
-                            focusManager.clearFocus()
-                        }
-                    }),
-                    maxLines = 4,
-                    enabled = !isGenerating
-                )
-
-                Spacer(modifier = Modifier.width(8.dp))
-
-                IconButton(
-                    onClick = {
-                        if (textInput.isNotBlank() && !isGenerating) {
-                            onSendMessage(textInput)
-                            textInput = ""
-                            focusManager.clearFocus()
-                        }
-                    },
-                    enabled = textInput.isNotBlank() && !isGenerating,
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(CircleShape)
-                        .background(
-                            if (textInput.isNotBlank() && !isGenerating) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.surfaceVariant
-                        )
-                        .testTag("ai_send_button")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Send,
-                        contentDescription = "发送",
-                        tint = if (textInput.isNotBlank() && !isGenerating) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp)
+                    TextField(
+                        value = textInput,
+                        onValueChange = {
+                            textInput = it
+                            onInteract()
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .border(width = 1.dp, color = Color(0x33FFFFFF), shape = RoundedCornerShape(24.dp))
+                            .testTag("ai_input_field"),
+                        placeholder = {
+                            Text(
+                                text = "给 ${currentPersona.name} 发送消息...",
+                                fontSize = 14.sp
+                            )
+                        },
+                        trailingIcon = {
+                            IconButton(
+                                onClick = { showEmojiPicker = !showEmojiPicker },
+                                modifier = Modifier.testTag("ai_emoji_toggle"),
+                                enabled = !isGenerating
+                            ) {
+                                Text(text = if (showEmojiPicker) "⌨️" else "😀", fontSize = 18.sp)
+                            }
+                        },
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent
+                        ),
+                        shape = RoundedCornerShape(24.dp),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                        keyboardActions = KeyboardActions(onSend = {
+                            if (textInput.isNotBlank() && !isGenerating) {
+                                onSendMessage(textInput)
+                                textInput = ""
+                                focusManager.clearFocus()
+                            }
+                        }),
+                        maxLines = 4,
+                        enabled = !isGenerating
+                    )
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    IconButton(
+                        onClick = {
+                            if (textInput.isNotBlank() && !isGenerating) {
+                                onSendMessage(textInput)
+                                textInput = ""
+                                focusManager.clearFocus()
+                            }
+                        },
+                        enabled = textInput.isNotBlank() && !isGenerating,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (textInput.isNotBlank() && !isGenerating) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.surfaceVariant
+                            )
+                            .testTag("ai_send_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Send,
+                            contentDescription = "发送",
+                            tint = if (textInput.isNotBlank() && !isGenerating) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+
+                if (showEmojiPicker) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    EmojiPickerPanel(
+                        onEmojiSelected = { emoji ->
+                            textInput = textInput + emoji
+                            onInteract()
+                        }
                     )
                 }
             }
@@ -1639,6 +1709,7 @@ fun CloudSyncChat(
 ) {
     val listState = rememberLazyListState()
     var textInput by remember { mutableStateOf("") }
+    var showEmojiPicker by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
 
     // For joining rooms
@@ -1947,70 +2018,91 @@ fun CloudSyncChat(
                 shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
                 color = MaterialTheme.colorScheme.surface
             ) {
-                Row(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(16.dp)
-                        .navigationBarsPadding(),
-                    verticalAlignment = Alignment.CenterVertically
+                        .navigationBarsPadding()
                 ) {
-                    TextField(
-                        value = textInput,
-                        onValueChange = { textInput = it },
-                        modifier = Modifier
-                            .weight(1f)
-                            .border(width = 1.dp, color = Color(0x33FFFFFF), shape = RoundedCornerShape(24.dp))
-                            .testTag("cloud_input_field"),
-                        placeholder = {
-                            Text(
-                                text = "说些什么（支持不同设备实时同步）...",
-                                fontSize = 13.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                            )
-                        },
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                            focusedIndicatorColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent
-                        ),
-                        shape = RoundedCornerShape(24.dp),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                        keyboardActions = KeyboardActions(onSend = {
-                            if (textInput.isNotBlank()) {
-                                onSendMessage(textInput)
-                                textInput = ""
-                                focusManager.clearFocus()
-                            }
-                        }),
-                        maxLines = 4
-                    )
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    IconButton(
-                        onClick = {
-                            if (textInput.isNotBlank()) {
-                                onSendMessage(textInput)
-                                textInput = ""
-                                focusManager.clearFocus()
-                            }
-                        },
-                        enabled = textInput.isNotBlank(),
-                        modifier = Modifier
-                            .size(48.dp)
-                            .clip(CircleShape)
-                            .background(
-                                if (textInput.isNotBlank()) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.surfaceVariant
-                            )
-                            .testTag("cloud_send_button")
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Send,
-                            contentDescription = "发送",
-                            tint = if (textInput.isNotBlank()) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp)
+                        TextField(
+                            value = textInput,
+                            onValueChange = { textInput = it },
+                            modifier = Modifier
+                                .weight(1f)
+                                .border(width = 1.dp, color = Color(0x33FFFFFF), shape = RoundedCornerShape(24.dp))
+                                .testTag("cloud_input_field"),
+                            placeholder = {
+                                Text(
+                                    text = "说些什么（支持不同设备实时同步）...",
+                                    fontSize = 13.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                )
+                            },
+                            trailingIcon = {
+                                IconButton(
+                                    onClick = { showEmojiPicker = !showEmojiPicker },
+                                    modifier = Modifier.testTag("cloud_emoji_toggle")
+                                ) {
+                                    Text(text = if (showEmojiPicker) "⌨️" else "😀", fontSize = 18.sp)
+                                }
+                            },
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent
+                            ),
+                            shape = RoundedCornerShape(24.dp),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                            keyboardActions = KeyboardActions(onSend = {
+                                if (textInput.isNotBlank()) {
+                                    onSendMessage(textInput)
+                                    textInput = ""
+                                    focusManager.clearFocus()
+                                }
+                            }),
+                            maxLines = 4
+                        )
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        IconButton(
+                            onClick = {
+                                if (textInput.isNotBlank()) {
+                                    onSendMessage(textInput)
+                                    textInput = ""
+                                    focusManager.clearFocus()
+                                }
+                            },
+                            enabled = textInput.isNotBlank(),
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (textInput.isNotBlank()) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.surfaceVariant
+                                )
+                                .testTag("cloud_send_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Send,
+                                contentDescription = "发送",
+                                tint = if (textInput.isNotBlank()) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+
+                    if (showEmojiPicker) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        EmojiPickerPanel(
+                            onEmojiSelected = { emoji ->
+                                textInput = textInput + emoji
+                            }
                         )
                     }
                 }
@@ -2191,4 +2283,84 @@ fun MessageBubbleRowWithReadCheck(
         }
     }
 }
+
+@Composable
+fun EmojiPickerPanel(
+    onEmojiSelected: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    height: Dp = 180.dp
+) {
+    val emojis = listOf(
+        "😀", "😃", "😄", "😁", "😆", "😅", "😂", "🤣", "😊", "😇",
+        "🙂", "🙃", "😉", "😌", "😍", "🥰", "😘", "😗", "😙", "😚",
+        "😋", "😛", "😝", "😜", "🤪", "🤨", "🧐", "🤓", "😎", "🤩",
+        "🥳", "😏", "😒", "😞", "😔", "😟", "😕", "🙁", "☹️", "😣",
+        "😖", "😫", "😩", "🥺", "😢", "😭", "😤", "😠", "😡", "🤬",
+        "🤯", "😳", "🥵", "🥶", "😱", "😨", "😰", "😥", "😓", "🤗",
+        "🤔", "🤭", "🤫", "🤥", "😶", "😐", "😑", "😬", "🙄", "😯",
+        "😴", "🤤", "😪", "😵", "🤐", "🥴", "🤢", "🤮", "🤧", "😷",
+        "❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💖",
+        "👍", "👎", "👌", "✌️", "🤞", "🤟", "🤘", "🤙", "🖐️", "✋",
+        "🤝", "👏", "🙌", "👐", "🤲", "🙏", "✍️", "💅", "🤳", "💪"
+    )
+
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(height),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+        ),
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, Color(0x19FFFFFF))
+    ) {
+        Column(modifier = Modifier.padding(8.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "常用表情 (Emojis)",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = "${emojis.size} 个可用",
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                )
+            }
+            
+            HorizontalDivider(color = Color(0x11FFFFFF), modifier = Modifier.padding(bottom = 8.dp))
+
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 38.dp),
+                modifier = Modifier.fillMaxSize(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                items(emojis) { emoji ->
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .clickable { onEmojiSelected(emoji) }
+                            .testTag("emoji_item_$emoji"),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = emoji,
+                            fontSize = 20.sp
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 
