@@ -203,7 +203,8 @@ fun ChatAppContent(
                             onSendMessage = { viewModel.sendLocalMessage(it) },
                             onDeleteMessage = { viewModel.deleteMessage(it) },
                             onUser1StatusChanged = { viewModel.setUser1Status(it) },
-                            onUser2StatusChanged = { viewModel.setUser2Status(it) }
+                            onUser2StatusChanged = { viewModel.setUser2Status(it) },
+                            onInteract = { viewModel.markIncomingMessagesAsRead() }
                         )
                     }
                     "FACE_TO_FACE" -> {
@@ -217,7 +218,8 @@ fun ChatAppContent(
                             onBackToMain = { viewModel.setMode("LOCAL") },
                             onClearChat = { viewModel.clearChat("FACE_TO_FACE") },
                             onUser1StatusChanged = { viewModel.setUser1Status(it) },
-                            onUser2StatusChanged = { viewModel.setUser2Status(it) }
+                            onUser2StatusChanged = { viewModel.setUser2Status(it) },
+                            onPaneInteract = { viewModel.markMessagesAsReadForUser(it) }
                         )
                     }
                     "AI" -> {
@@ -228,7 +230,8 @@ fun ChatAppContent(
                             isGenerating = isGenerating,
                             onPersonaSelected = { viewModel.setPersonaId(it) },
                             onSendMessage = { viewModel.sendAiUserMessage(it) },
-                            onDeleteMessage = { viewModel.deleteMessage(it) }
+                            onDeleteMessage = { viewModel.deleteMessage(it) },
+                            onInteract = { viewModel.markIncomingMessagesAsRead() }
                         )
                     }
                     "CLOUD" -> {
@@ -384,7 +387,8 @@ fun ClassicDuetChat(
     onSendMessage: (String) -> Unit,
     onDeleteMessage: (ChatMessage) -> Unit,
     onUser1StatusChanged: (String) -> Unit,
-    onUser2StatusChanged: (String) -> Unit
+    onUser2StatusChanged: (String) -> Unit,
+    onInteract: () -> Unit
 ) {
     val listState = rememberLazyListState()
     var textInput by remember { mutableStateOf("") }
@@ -443,7 +447,12 @@ fun ClassicDuetChat(
             } else {
                 LazyColumn(
                     state = listState,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clickable(
+                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                            indication = null
+                        ) { onInteract() },
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
@@ -546,7 +555,10 @@ fun ClassicDuetChat(
                 ) {
                     TextField(
                         value = textInput,
-                        onValueChange = { textInput = it },
+                        onValueChange = {
+                            textInput = it
+                            onInteract()
+                        },
                         modifier = Modifier
                             .weight(1f)
                             .border(width = 1.dp, color = Color(0x33FFFFFF), shape = RoundedCornerShape(24.dp))
@@ -626,7 +638,8 @@ fun FaceToFaceChat(
     onBackToMain: () -> Unit,
     onClearChat: () -> Unit,
     onUser1StatusChanged: (String) -> Unit,
-    onUser2StatusChanged: (String) -> Unit
+    onUser2StatusChanged: (String) -> Unit,
+    onPaneInteract: (String) -> Unit
 ) {
     // We split screen into top half (rotated 180 degrees) and bottom half (0 degrees)
     Box(modifier = Modifier.fillMaxSize()) {
@@ -648,7 +661,8 @@ fun FaceToFaceChat(
                     messages = messages,
                     onSend = { text -> onSendMessage(text, "user1") },
                     primaryColor = BubbleFaceToFaceUser1,
-                    onStatusSelected = onUser1StatusChanged
+                    onStatusSelected = onUser1StatusChanged,
+                    onInteract = { onPaneInteract("user1") }
                 )
             }
 
@@ -673,7 +687,8 @@ fun FaceToFaceChat(
                     messages = messages,
                     onSend = { text -> onSendMessage(text, "user2") },
                     primaryColor = BubbleFaceToFaceUser2,
-                    onStatusSelected = onUser2StatusChanged
+                    onStatusSelected = onUser2StatusChanged,
+                    onInteract = { onPaneInteract("user2") }
                 )
             }
         }
@@ -718,7 +733,8 @@ fun FaceToFacePane(
     messages: List<ChatMessage>,
     onSend: (String) -> Unit,
     primaryColor: Color,
-    onStatusSelected: (String) -> Unit
+    onStatusSelected: (String) -> Unit,
+    onInteract: () -> Unit
 ) {
     val listState = rememberLazyListState()
     var text by remember { mutableStateOf("") }
@@ -802,7 +818,12 @@ fun FaceToFacePane(
             } else {
                 LazyColumn(
                     state = listState,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clickable(
+                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                            indication = null
+                        ) { onInteract() },
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     items(messages, key = { it.id }) { msg ->
@@ -831,12 +852,49 @@ fun FaceToFacePane(
                                         containerColor = if (isMyMessage) primaryColor else MaterialTheme.colorScheme.surfaceVariant
                                     )
                                 ) {
-                                    Text(
-                                        text = msg.content,
-                                        color = if (isMyMessage) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        fontSize = 12.sp,
+                                    Column(
                                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                                    )
+                                    ) {
+                                        Text(
+                                            text = msg.content,
+                                            color = if (isMyMessage) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontSize = 12.sp
+                                        )
+                                        if (isMyMessage) {
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.End,
+                                                modifier = Modifier.align(Alignment.End)
+                                            ) {
+                                                if (msg.isRead) {
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Done,
+                                                            contentDescription = "已读",
+                                                            tint = Color(0xFF10B981),
+                                                            modifier = Modifier.size(9.dp)
+                                                        )
+                                                        Icon(
+                                                            imageVector = Icons.Default.Done,
+                                                            contentDescription = "已读",
+                                                            tint = Color(0xFF10B981),
+                                                            modifier = Modifier
+                                                                .size(9.dp)
+                                                                .offset(x = (-3).dp)
+                                                        )
+                                                    }
+                                                } else {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Check,
+                                                        contentDescription = "已送达",
+                                                        tint = Color.White.copy(alpha = 0.6f),
+                                                        modifier = Modifier.size(9.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -854,7 +912,10 @@ fun FaceToFacePane(
         ) {
             TextField(
                 value = text,
-                onValueChange = { text = it },
+                onValueChange = {
+                    text = it
+                    onInteract()
+                },
                 modifier = Modifier
                     .weight(1f)
                     .heightIn(max = 50.dp)
@@ -917,7 +978,8 @@ fun AiCompanionChat(
     isGenerating: Boolean,
     onPersonaSelected: (String) -> Unit,
     onSendMessage: (String) -> Unit,
-    onDeleteMessage: (ChatMessage) -> Unit
+    onDeleteMessage: (ChatMessage) -> Unit,
+    onInteract: () -> Unit
 ) {
     val listState = rememberLazyListState()
     var textInput by remember { mutableStateOf("") }
@@ -1005,7 +1067,12 @@ fun AiCompanionChat(
         ) {
             LazyColumn(
                 state = listState,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable(
+                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                        indication = null
+                    ) { onInteract() },
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
@@ -1088,7 +1155,10 @@ fun AiCompanionChat(
             ) {
                 TextField(
                     value = textInput,
-                    onValueChange = { textInput = it },
+                    onValueChange = {
+                        textInput = it
+                        onInteract()
+                    },
                     modifier = Modifier
                         .weight(1f)
                         .border(width = 1.dp, color = Color(0x33FFFFFF), shape = RoundedCornerShape(24.dp))
@@ -1268,13 +1338,46 @@ fun MessageBubbleRow(
                             fontFamily = FontFamily.SansSerif
                         )
                         Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = formattedTime,
-                            color = bubbleTimeColor,
-                            fontSize = 9.sp,
-                            textAlign = TextAlign.End,
+                        Row(
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.align(Alignment.End)
-                        )
+                        ) {
+                            Text(
+                                text = formattedTime,
+                                color = bubbleTimeColor,
+                                fontSize = 9.sp,
+                                textAlign = TextAlign.End
+                            )
+                            if (isSelf) {
+                                Spacer(modifier = Modifier.width(4.dp))
+                                if (message.isRead) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.Done,
+                                            contentDescription = "已读",
+                                            tint = Color(0xFF10B981),
+                                            modifier = Modifier.size(10.dp)
+                                        )
+                                        Icon(
+                                            imageVector = Icons.Default.Done,
+                                            contentDescription = "已读",
+                                            tint = Color(0xFF10B981),
+                                            modifier = Modifier
+                                                .size(10.dp)
+                                                .offset(x = (-4).dp)
+                                        )
+                                    }
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = "已送达",
+                                        tint = bubbleTimeColor,
+                                        modifier = Modifier.size(10.dp)
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }

@@ -90,6 +90,10 @@ class ChatRepository(
         chatMessageDao.deleteMessage(message)
     }
 
+    suspend fun markMessagesAsRead(chatMode: String, personaId: String?, currentUserId: String) {
+        chatMessageDao.markMessagesAsRead(chatMode, personaId, currentUserId)
+    }
+
     suspend fun generateAiResponse(
         personaId: String,
         recentMessages: List<ChatMessage>

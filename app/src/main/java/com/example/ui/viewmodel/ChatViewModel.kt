@@ -141,6 +141,24 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     fun setMode(mode: String) {
         _activeMode.value = mode
         prefs.edit().putString("active_mode", mode).apply()
+        markIncomingMessagesAsRead()
+    }
+
+    fun markIncomingMessagesAsRead() {
+        val mode = _activeMode.value
+        val personaId = if (mode == "AI") _activePersonaId.value else null
+        val currentUserId = if (mode == "AI") "user1" else _currentUserLocal.value
+        viewModelScope.launch {
+            repository.markMessagesAsRead(mode, personaId, currentUserId)
+        }
+    }
+
+    fun markMessagesAsReadForUser(senderId: String) {
+        val mode = _activeMode.value
+        val personaId = if (mode == "AI") _activePersonaId.value else null
+        viewModelScope.launch {
+            repository.markMessagesAsRead(mode, personaId, senderId)
+        }
     }
 
     fun setPersonaId(personaId: String) {
@@ -369,6 +387,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     fun toggleLocalSender() {
         _currentUserLocal.value = if (_currentUserLocal.value == "user1") "user2" else "user1"
+        markIncomingMessagesAsRead()
     }
 
     fun sendLocalMessage(text: String) {
@@ -384,7 +403,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 content = trimmed,
                 chatMode = "LOCAL",
                 personaId = null,
-                isRead = true // Instantly read as it's locally shared
+                isRead = false // Starts unread until the other switches back/interacts
             )
             repository.insertMessage(message)
         }
@@ -402,7 +421,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 content = trimmed,
                 chatMode = "FACE_TO_FACE",
                 personaId = null,
-                isRead = true // Instantly read as both users face the shared screen
+                isRead = false // Starts unread until the other side interacts or views
             )
             repository.insertMessage(message)
         }
@@ -456,7 +475,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 senderId = "user1",
                 content = trimmed,
                 chatMode = "AI",
-                personaId = personaId
+                personaId = personaId,
+                isRead = false // Sent to AI, not yet read by AI companion
             )
             repository.insertMessage(userMsg)
 
@@ -468,12 +488,16 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             // Generate AI companion reply asynchronously
             val aiReplyText = repository.generateAiResponse(personaId, history)
 
+            // AI companion "reads" our message:
+            repository.markMessagesAsRead("AI", personaId, "ai")
+
             val aiResponseMsg = ChatMessage(
                 senderName = repository.personas.find { it.id == personaId }?.name ?: "AI",
                 senderId = "ai",
                 content = aiReplyText,
                 chatMode = "AI",
-                personaId = personaId
+                personaId = personaId,
+                isRead = false // Not yet read by the user (gets marked read when user interacts)
             )
             repository.insertMessage(aiResponseMsg)
             _isGenerating.value = false

@@ -21,4 +21,7 @@ interface ChatMessageDao {
 
     @Query("DELETE FROM chat_messages WHERE chatMode = :chatMode AND (personaId = :personaId OR (personaId IS NULL AND :personaId IS NULL))")
     suspend fun clearMessages(chatMode: String, personaId: String?)
+
+    @Query("UPDATE chat_messages SET isRead = 1 WHERE chatMode = :chatMode AND (personaId = :personaId OR (personaId IS NULL AND :personaId IS NULL)) AND senderId != :currentUserId AND isRead = 0")
+    suspend fun markMessagesAsRead(chatMode: String, personaId: String?, currentUserId: String)
 }
