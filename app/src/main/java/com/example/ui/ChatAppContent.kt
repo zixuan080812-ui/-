@@ -5,6 +5,9 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -854,7 +857,9 @@ fun FaceToFacePane(
                     items(messages, key = { it.id }) { msg ->
                         val isMyMessage = msg.senderId == myPaneId
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .animateBubbleEntry(),
                             horizontalArrangement = if (isMyMessage) Arrangement.End else Arrangement.Start
                         ) {
                             Column(
@@ -1309,6 +1314,7 @@ fun MessageBubbleRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .animateBubbleEntry()
             .padding(vertical = 2.dp),
         horizontalArrangement = if (isSelf) Arrangement.End else Arrangement.Start
     ) {
@@ -2122,7 +2128,9 @@ fun MessageBubbleRowWithReadCheck(
     val formattedTime = remember(message.timestamp) { formatter.format(Date(message.timestamp)) }
 
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .animateBubbleEntry(),
         horizontalArrangement = if (isSelf) Arrangement.End else Arrangement.Start,
         verticalAlignment = Alignment.Top
     ) {
@@ -2363,4 +2371,43 @@ fun EmojiPickerPanel(
     }
 }
 
+@Composable
+fun Modifier.animateBubbleEntry(): Modifier {
+    val animScale = remember { Animatable(0.85f) }
+    val animAlpha = remember { Animatable(0f) }
+    val animOffsetY = remember { Animatable(24f) }
 
+    LaunchedEffect(Unit) {
+        launch {
+            animScale.animateTo(
+                targetValue = 1f,
+                animationSpec = spring(
+                    dampingRatio = 0.78f,
+                    stiffness = Spring.StiffnessMediumLow
+                )
+            )
+        }
+        launch {
+            animAlpha.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(durationMillis = 220)
+            )
+        }
+        launch {
+            animOffsetY.animateTo(
+                targetValue = 0f,
+                animationSpec = spring(
+                    dampingRatio = 0.8f,
+                    stiffness = Spring.StiffnessMediumLow
+                )
+            )
+        }
+    }
+
+    return this.graphicsLayer {
+        scaleX = animScale.value
+        scaleY = animScale.value
+        alpha = animAlpha.value
+        translationY = animOffsetY.value * density
+    }
+}
