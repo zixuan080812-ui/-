@@ -1,6 +1,7 @@
 package com.example.ui.viewmodel
 
 import android.app.Application
+import android.content.Context
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
@@ -34,6 +35,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         apiService = RetrofitClient.service
     )
 
+    private val prefs = application.getSharedPreferences("localStorage_chat_prefs", Context.MODE_PRIVATE)
+
     val personas = repository.personas
 
     // Active Modes: "LOCAL" (classic duet chat), "FACE_TO_FACE" (splitscreen facing), "AI" (AI twin), "CLOUD" (online sync)
@@ -58,10 +61,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     val user2Status: StateFlow<String> = _user2Status.asStateFlow()
 
     // Cloud Chat properties
-    private val _cloudUserId = MutableStateFlow("id_" + (100000..999999).random().toString())
+    private val _cloudUserId = MutableStateFlow("")
     val cloudUserId: StateFlow<String> = _cloudUserId.asStateFlow()
 
-    private val _cloudUserName = MutableStateFlow("User_" + (1000..9999).random().toString())
+    private val _cloudUserName = MutableStateFlow("")
     val cloudUserName: StateFlow<String> = _cloudUserName.asStateFlow()
 
     private val _cloudUserStatus = MutableStateFlow("ONLINE")
@@ -82,6 +85,38 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     // Loading/generating state for AI replies
     private val _isGenerating = MutableStateFlow(false)
     val isGenerating: StateFlow<Boolean> = _isGenerating.asStateFlow()
+
+    init {
+        _activeMode.value = prefs.getString("active_mode", "LOCAL") ?: "LOCAL"
+        _activePersonaId.value = prefs.getString("active_persona_id", "alex") ?: "alex"
+        _user1Name.value = prefs.getString("user1_name", "Alice") ?: "Alice"
+        _user2Name.value = prefs.getString("user2_name", "Bob") ?: "Bob"
+        _user1Status.value = prefs.getString("user1_status", "ONLINE") ?: "ONLINE"
+        _user2Status.value = prefs.getString("user2_status", "ONLINE") ?: "ONLINE"
+
+        var savedUserId = prefs.getString("cloud_user_id", "") ?: ""
+        if (savedUserId.isEmpty()) {
+            savedUserId = "id_" + (100000..999999).random().toString()
+            prefs.edit().putString("cloud_user_id", savedUserId).apply()
+        }
+        _cloudUserId.value = savedUserId
+
+        var savedUserName = prefs.getString("cloud_user_name", "") ?: ""
+        if (savedUserName.isEmpty()) {
+            savedUserName = "User_" + (1000..9999).random().toString()
+            prefs.edit().putString("cloud_user_name", savedUserName).apply()
+        }
+        _cloudUserName.value = savedUserName
+
+        _cloudUserStatus.value = prefs.getString("cloud_user_status", "ONLINE") ?: "ONLINE"
+
+        val savedRoomCode = prefs.getString("active_room_code", "") ?: ""
+        if (savedRoomCode.isNotEmpty()) {
+            _activeRoomCode.value = savedRoomCode
+            _activePersonaId.value = savedRoomCode
+            startCloudPolling(savedRoomCode)
+        }
+    }
 
     // Query messages dynamically depending on mode, personaId, and room code
     val activeMessages: StateFlow<List<ChatMessage>> = combine(
@@ -105,10 +140,12 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setMode(mode: String) {
         _activeMode.value = mode
+        prefs.edit().putString("active_mode", mode).apply()
     }
 
     fun setPersonaId(personaId: String) {
         _activePersonaId.value = personaId
+        prefs.edit().putString("active_persona_id", personaId).apply()
         viewModelScope.launch {
             // Check if there are no messages for this AI persona. If so, insert the greeting automatically.
             val currentMsg = repository.personas.find { it.id == personaId }
@@ -140,21 +177,33 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setUserNames(u1: String, u2: String) {
-        if (u1.isNotBlank()) _user1Name.value = u1.trim()
-        if (u2.isNotBlank()) _user2Name.value = u2.trim()
+        if (u1.isNotBlank()) {
+            val t1 = u1.trim()
+            _user1Name.value = t1
+            prefs.edit().putString("user1_name", t1).apply()
+        }
+        if (u2.isNotBlank()) {
+            val t2 = u2.trim()
+            _user2Name.value = t2
+            prefs.edit().putString("user2_name", t2).apply()
+        }
     }
 
     fun setUser1Status(status: String) {
         _user1Status.value = status
+        prefs.edit().putString("user1_status", status).apply()
     }
 
     fun setUser2Status(status: String) {
         _user2Status.value = status
+        prefs.edit().putString("user2_status", status).apply()
     }
 
     fun setCloudUserName(name: String) {
         if (name.isNotBlank()) {
-            _cloudUserName.value = name.trim()
+            val trimmed = name.trim()
+            _cloudUserName.value = trimmed
+            prefs.edit().putString("cloud_user_name", trimmed).apply()
             val roomCode = _activeRoomCode.value
             if (roomCode.isNotEmpty()) {
                 viewModelScope.launch {
@@ -164,7 +213,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                             _cloudUserId.value,
                             com.example.data.api.MemberStatusDto(
                                 userId = _cloudUserId.value,
-                                name = name.trim(),
+                                name = trimmed,
                                 status = _cloudUserStatus.value,
                                 lastSeen = System.currentTimeMillis()
                             )
@@ -179,6 +228,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setCloudUserStatus(status: String) {
         _cloudUserStatus.value = status
+        prefs.edit().putString("cloud_user_status", status).apply()
         val roomCode = _activeRoomCode.value
         if (roomCode.isNotEmpty()) {
             viewModelScope.launch {
@@ -204,6 +254,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         val code = (100000..999999).random().toString()
         _activeRoomCode.value = code
         _activePersonaId.value = code
+        prefs.edit().putString("active_room_code", code).apply()
         viewModelScope.launch {
             repository.clearMessages("CLOUD", code) // Clear old stale items locally
         }
@@ -215,6 +266,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         if (trimmed.length == 6) {
             _activeRoomCode.value = trimmed
             _activePersonaId.value = trimmed
+            prefs.edit().putString("active_room_code", trimmed).apply()
             viewModelScope.launch {
                 repository.clearMessages("CLOUD", trimmed) // Clear old stale items locally
             }
@@ -224,6 +276,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     fun leaveRoom() {
         _activeRoomCode.value = ""
+        prefs.edit().remove("active_room_code").apply()
         stopCloudPolling()
     }
 
